@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Controle de Assinaturas</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    :root{
+      --bg:#f3f6fb;--card:#fff;--text:#172033;--muted:#667085;--line:#e4e7ec;
+      --blue:#175cd3;--blue2:#eff8ff;--green:#067647;--green2:#ecfdf3;
+      --red:#b42318;--red2:#fef3f2;--amber:#b54708;--amber2:#fffaeb;--nav:#102a56;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
+    header{background:var(--nav);color:#fff;padding:18px 22px;position:sticky;top:0;z-index:10}
+    header .row{max-width:1180px;margin:auto;display:flex;justify-content:space-between;align-items:center;gap:16px}
+    header h1{font-size:20px;margin:0}
+    header small{opacity:.8}
+    .wrap{max-width:1180px;margin:22px auto;padding:0 16px}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+    .tab{border:1px solid var(--line);background:#fff;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:700}
+    .tab.active{background:var(--nav);color:#fff;border-color:var(--nav)}
+    .pane{display:none}.pane.active{display:block}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:0 1px 2px #1018280a}
+    .metric .value{font-size:32px;font-weight:800;margin-top:4px}
+    .metric .label{color:var(--muted);font-size:13px}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0}
+    button,.btn{border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}
+    .primary{background:var(--blue);color:#fff}.secondary{background:#fff;border:1px solid var(--line);color:var(--text)}
+    .danger{background:var(--red2);color:var(--red)}
+    input,select,textarea{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;background:#fff}
+    input[type=file]{max-width:100%}
+    .search{min-width:280px;flex:1}
+    table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden}
+    th,td{padding:12px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:14px;vertical-align:middle}
+    th{background:#f9fafb;color:#475467;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+    .pill{display:inline-flex;padding:5px 9px;border-radius:999px;font-size:12px;font-weight:800}
+    .pending{background:var(--red2);color:var(--red)}.signed{background:var(--green2);color:var(--green)}
+    .warn{background:var(--amber2);color:var(--amber)}.sent{background:var(--blue2);color:var(--blue)}
+    .muted{color:var(--muted)}
+    .empty{text-align:center;padding:34px;color:var(--muted)}
+    .notice{padding:12px 14px;border-radius:10px;background:var(--blue2);color:#1849a9;margin-bottom:14px;font-size:14px}
+    .warning{padding:12px 14px;border-radius:10px;background:var(--amber2);color:#93370d;margin-bottom:14px;font-size:14px}
+    .modal{position:fixed;inset:0;background:#10182888;display:none;align-items:center;justify-content:center;padding:16px;z-index:30}
+    .modal.show{display:flex}.modal .box{background:#fff;border-radius:16px;max-width:560px;width:100%;padding:20px}
+    .modal h3{margin-top:0}.field{display:flex;flex-direction:column;gap:6px;margin:12px 0}.field label{font-size:13px;font-weight:700}
+    .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+    pre{white-space:pre-wrap;word-break:break-word;background:#101828;color:#e6edf3;padding:14px;border-radius:10px;max-height:260px;overflow:auto}
+    @media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)} th:nth-child(3),td:nth-child(3){display:none}}
+    @media(max-width:520px){.grid{grid-template-columns:1fr}.search{min-width:100%}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <div>
+      <h1>Controle de Assinaturas</h1>
+      <small>Pendências, assinados e avisos pelo WhatsApp</small>
+    </div>
+    <button class="secondary" id="topImportBtn" type="button">Importar relatório</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="tabs">
+    <button class="tab active" data-tab="painel">Painel</button>
+    <button class="tab" data-tab="pendentes">Pendentes</button>
+    <button class="tab" data-tab="assinados">Assinados</button>
+    <button class="tab" data-tab="mensagens">Mensagens</button>
+    <button class="tab" data-tab="config">Configurações</button>
+  </div>
+
+  <input id="fileInput" type="file"
+      accept=".pdf,application/pdf,.csv,text/csv,.txt,text/plain"
+      style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" />
+
+  <section id="painel" class="pane active">
+    <div class="notice"><b>Regra:</b> se o cliente tiver pelo menos 1 documento com “Assinado”, ele é considerado assinado e não entra nos pendentes.</div>
+    <div class="grid">
+      <div class="card metric"><div class="label">Clientes no relatório</div><div class="value" id="mTotal">0</div></div>
+      <div class="card metric"><div class="label">Sem nenhuma assinatura</div><div class="value" id="mPending">0</div></div>
+      <div class="card metric"><div class="label">Com pelo menos 1 assinatura</div><div class="value" id="mSigned">0</div></div>
+      <div class="card metric"><div class="label">Mensagens registradas</div><div class="value" id="mMessages">0</div></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3 style="margin-top:0">Importar relatório</h3>
+      <p class="muted">Aceita CSV/TXT e possui leitura experimental de PDF. Para máxima precisão, prefira CSV exportado pelo sistema.</p>
+      <div class="toolbar">
+        <label class="btn primary" style="display:inline-block;cursor:pointer">
+      Selecionar PDF
+      <input id="visibleFileInput" type="file"
+        accept=".pdf,application/pdf,.csv,text/csv,.txt,text/plain"
+        style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" />
+    </label>
+        <button class="secondary" onclick="loadDemo()">Carregar exemplo</button>
+        <button class="danger" onclick="clearData()">Limpar dados</button>
+      </div>
+      <div id="importStatus" class="muted" style="margin-top:10px">Nenhum arquivo importado.</div>
+    <p class="muted" style="font-size:12px;margin-bottom:0">No iPhone, use preferencialmente o botão “Selecionar PDF” desta caixa.</p>
+    </div>
+  </section>
+
+  <section id="pendentes" class="pane">
+    <div class="toolbar">
+      <input class="search" id="searchPending" placeholder="Pesquisar cliente..." oninput="renderAll()" />
+      <button class="secondary" onclick="copyPending()">Copiar lista</button>
+    </div>
+    <div class="warning">O botão do WhatsApp precisa do telefone do cliente. Como o relatório atual pode não trazer telefone, você pode cadastrá-lo manualmente e o navegador salva neste dispositivo.</div>
+    <div id="pendingTable"></div>
+  </section>
+
+  <section id="assinados" class="pane">
+    <div class="toolbar"><input class="search" id="searchSigned" placeholder="Pesquisar cliente..." oninput="renderAll()" /></div>
+    <div id="signedTable"></div>
+  </section>
+
+  <section id="mensagens" class="pane">
+    <div class="toolbar"><input class="search" id="searchMessages" placeholder="Pesquisar cliente..." oninput="renderAll()" /></div>
+    <div id="messagesTable"></div>
+  </section>
+
+  <section id="config" class="pane">
+    <div class="card">
+      <h3 style="margin-top:0">Mensagem padrão</h3>
+      <div class="field">
+        <label>Texto enviado ao cliente</label>
+        <textarea id="messageTemplate" rows="6"></textarea>
+      </div>
+      <p class="muted">Use <b>{nome}</b> para inserir automaticamente o primeiro nome do cliente.</p>
+      <button class="primary" onclick="saveTemplate()">Salvar mensagem</button>
+    </div>
+  </section>
+</div>
+
+<div id="clientModal" class="modal">
+  <div class="box">
+    <h3 id="modalName">Cliente</h3>
+    <div class="field">
+      <label>Telefone com DDD</label>
+      <input id="modalPhone" placeholder="Ex.: 27999998888" inputmode="numeric" />
+    </div>
+    <div class="field">
+      <label>Mensagem</label>
+      <textarea id="modalMessage" rows="6"></textarea>
+    </div>
+    <div class="actions">
+      <button class="secondary" onclick="closeModal()">Cancelar</button>
+      <button class="primary" onclick="openWhatsApp()">Abrir WhatsApp</button>
+    </div>
+  </div>
+</div>
+
+<script>
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
+</script>
+
+<script>
+const DEFAULT_TEMPLATE = `Olá, {nome}! Tudo bem?
+
+Informamos que foi enviado um link para assinatura do seu documento. Quando possível, pedimos que verifique e realize a assinatura.
+
+Qualquer dúvida, estamos à disposição.`;
+
+let clients = JSON.parse(localStorage.getItem('assinatura_clients') || '[]');
+let messageLog = JSON.parse(localStorage.getItem('assinatura_messages') || '[]');
+let currentClient = null;
+
+document.getElementById('messageTemplate').value = localStorage.getItem('assinatura_template') || DEFAULT_TEMPLATE;
+
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab,.pane').forEach(x=>x.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+  });
+});
+
+async function handleSelectedFile(input){
+  const file=input.files && input.files[0];
+  if(!file){ setStatus('Nenhum arquivo selecionado.'); return; }
+
+  setStatus(`Arquivo selecionado: ${file.name}. Iniciando leitura...`);
+  try{
+    let records=[];
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+    if(isPdf){
+      setStatus(`Abrindo PDF ${file.name}...`);
+      records = await parsePDF(file);
+    }else{
+      records = parseText(await file.text());
+    }
+
+    clients = groupByClient(records);
+    save();
+    setStatus(`✓ ${file.name}: ${records.length} registros encontrados; ${clients.length} clientes agrupados.`);
+    renderAll();
+  }catch(err){
+    console.error(err);
+    setStatus(`Erro ao ler ${file.name}: ${err && err.message ? err.message : err}`);
+  }
+  input.value='';
+}
+
+const hiddenInput=document.getElementById('fileInput');
+const visibleInput=document.getElementById('visibleFileInput');
+
+hiddenInput.addEventListener('change',()=>handleSelectedFile(hiddenInput));
+visibleInput.addEventListener('change',()=>handleSelectedFile(visibleInput));
+
+document.getElementById('topImportBtn').addEventListener('click',()=>{
+  // O botão superior aciona o seletor. O botão "Selecionar PDF" abaixo
+  // continua disponível caso o Safari bloqueie o clique programático.
+  hiddenInput.click();
+});
+
+function normalize(s=''){
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toUpperCase();
+}
+function canonicalName(s=''){
+  return s.replace(/\s+/g,' ').trim();
+}
+function looksSigned(text){
+  return /(?:^|[_\s-])ASSINADO(?:[_\s-]|$)/i.test(text);
+}
+function isDoc(text){
+  return /(PROPOSTA|APOLICE|APÓLICE|ENDOSSO|CERTIFICADO|DOCUMENTO)/i.test(text);
+}
+
+/* CSV/TXT:
+   Formatos aceitos:
+   CLIENTE;DESCRIÇÃO DO ARQUIVO;COTAÇÃO;...
+   ou CLIENTE<TAB>DESCRIÇÃO...
+*/
+function parseText(text){
+  const lines=text.split(/\r?\n/).filter(x=>x.trim());
+  if(!lines.length)return [];
+  const sep = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
+  const headers=lines[0].split(sep).map(normalize);
+  const ci=headers.findIndex(h=>h.includes('CLIENTE'));
+  const di=headers.findIndex(h=>h.includes('DESCRICAO') || h.includes('ARQUIVO'));
+  const qi=headers.findIndex(h=>h.includes('COTACAO'));
+  if(ci<0 || di<0){
+    // fallback simples: "nome | descrição | cotação"
+    return lines.map((line,i)=>{
+      const p=line.split(/\s*[|;,\t]\s*/);
+      return {cliente:p[0]||`Registro ${i+1}`, descricao:p[1]||'', cotacao:p[2]||''};
+    }).filter(r=>r.cliente);
+  }
+  return lines.slice(1).map(line=>{
+    const p=line.split(sep);
+    return {cliente:canonicalName(p[ci]||''), descricao:p[di]||'', cotacao:qi>=0?(p[qi]||''):''};
+  }).filter(r=>r.cliente);
+}
+
+/* Leitura experimental de PDF.
+   Reconstrói linhas por coordenada Y e tenta reconhecer registros pela presença
+   de documento + cotação. PDFs de relatório podem quebrar nomes em várias linhas,
+   então CSV continua sendo a opção mais confiável.
+*/
+async function parsePDF(file){
+  if(!window.pdfjsLib) throw new Error('O leitor de PDF não carregou. Atualize a página com internet.');
+  const data=new Uint8Array(await file.arrayBuffer());
+  const pdf=await pdfjsLib.getDocument({data,disableWorker:true}).promise;
+  const rows=[];
+
+  for(let p=1;p<=pdf.numPages;p++){
+    setStatus(`Lendo página ${p} de ${pdf.numPages}...`);
+    const page=await pdf.getPage(p);
+    const content=await page.getTextContent();
+    const words=content.items.map(i=>({
+      t:(i.str||'').trim(),
+      x:i.transform[4],
+      // PDF.js usa origem inferior; basta manter a mesma escala para agrupamento.
+      y:i.transform[5]
+    })).filter(i=>i.t);
+
+    // Encontra cada linha de documento pela coluna "Descrição do arquivo".
+    const anchors=[...new Set(words
+      .filter(w=>w.x>=64 && w.x<74 &&
+        /^(proposta|ap[oó]lice|endosso|documento|certificado)$/i.test(w.t))
+      .map(w=>w.y))].sort((a,b)=>b-a);
+
+    for(let i=0;i<anchors.length;i++){
+      const y=anchors[i];
+      const upper=i===0 ? y+3.5 : (anchors[i-1]+y)/2;
+      const lower=i===anchors.length-1 ? y-3.5 : (y+anchors[i+1])/2;
+      const band=words.filter(w=>w.y<=upper && w.y>lower)
+                      .sort((a,b)=>b.y-a.y || a.x-b.x);
+
+      const all=band.map(w=>w.t).join(' ');
+      const signed=/assinado/i.test(all);
+
+      // Cotação ocupa uma coluna própria no relatório.
+      const cotCandidates=band
+        .filter(w=>w.x>=78 && w.x<84 && /^\d{5,9}$/.test(w.t))
+        .map(w=>w.t);
+      const cotacao=cotCandidates[0]||'';
+
+      // Só usamos o nome da linha ORIGINAL. Nas linhas "_Assinado",
+      // o texto da descrição invade visualmente a coluna do cliente.
+      let cliente='';
+      if(!signed){
+        cliente=band.filter(w=>w.x<64.5)
+          .map(w=>w.t)
+          .join(' ')
+          .replace(/\s+/g,' ')
+          .trim();
+      }
+
+      rows.push({cliente,cotacao,signed});
+    }
+  }
+
+  // Primeiro associa cada cotação ao cliente da linha original.
+  const cotToClient=new Map();
+  for(const r of rows){
+    if(!r.signed && r.cotacao && r.cliente) cotToClient.set(r.cotacao,r.cliente);
+  }
+
+  const records=[];
+  for(const r of rows){
+    const cliente=r.signed ? cotToClient.get(r.cotacao) : r.cliente;
+    if(!cliente) continue;
+    records.push({
+      cliente,
+      cotacao:r.cotacao,
+      descricao:r.signed ? 'Documento_Assinado' : 'Documento enviado'
+    });
+  }
+
+  if(!records.length) throw new Error('Nenhum registro foi reconhecido neste relatório.');
+  return records;
+}
+
+function groupByClient(records){
+  const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .toUpperCase().replace(/[^A-Z0-9]/g,'');
+
+  const map=new Map();
+  for(const r of records){
+    const key=norm(r.cliente);
+    if(!key) continue;
+    if(!map.has(key)) map.set(key,{
+      name:String(r.cliente||'').replace(/\s+/g,' ').trim(),
+      signed:false,sends:new Set(),docs:[],phone:'',notified:false
+    });
+    const c=map.get(key);
+    const isSigned=/assinado/i.test(r.descricao||'');
+    if(isSigned) c.signed=true;
+    c.docs.push(r);
+    if(!isSigned && r.cotacao) c.sends.add(r.cotacao);
+  }
+  return [...map.values()].map(c=>({
+    name:c.name,signed:c.signed,sends:c.sends.size,docs:c.docs,
+    phone:c.phone,notified:c.notified
+  })).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+}
+
+function save(){
+  localStorage.setItem('assinatura_clients',JSON.stringify(clients));
+  localStorage.setItem('assinatura_messages',JSON.stringify(messageLog));
+}
+
+function renderAll(){
+  const pending=clients.filter(c=>!c.signed);
+  const signed=clients.filter(c=>c.signed);
+  document.getElementById('mTotal').textContent=clients.length;
+  document.getElementById('mPending').textContent=pending.length;
+  document.getElementById('mSigned').textContent=signed.length;
+  document.getElementById('mMessages').textContent=messageLog.length;
+
+  renderClients('pendingTable',pending,document.getElementById('searchPending').value,true);
+  renderClients('signedTable',signed,document.getElementById('searchSigned').value,false);
+  renderMessages();
+}
+
+function esc(s=''){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function renderClients(id,data,query,actions){
+  const q=normalize(query);
+  data=data.filter(c=>!q || normalize(c.nome).includes(q));
+  if(!data.length){document.getElementById(id).innerHTML='<div class="card empty">Nenhum cliente encontrado.</div>';return}
+  let html=`<table><thead><tr><th>#</th><th>Cliente</th><th>Envios</th><th>Status</th>${actions?'<th>Ação</th>':''}</tr></thead><tbody>`;
+  data.forEach((c,i)=>{
+    html+=`<tr>
+      <td>${i+1}</td>
+      <td><b>${esc(c.nome)}</b>${c.phone?`<div class="muted">${esc(c.phone)}</div>`:''}</td>
+      <td>${c.envios}</td>
+      <td><span class="pill ${c.signed?'signed':'pending'}">${c.signed?'Assinado':'Pendente'}</span></td>
+      ${actions?`<td><button class="primary" onclick='openClient(${JSON.stringify(c.key)})'>Avisar no WhatsApp</button></td>`:''}
+    </tr>`;
+  });
+  html+='</tbody></table>';
+  document.getElementById(id).innerHTML=html;
+}
+
+function renderMessages(){
+  const q=normalize(document.getElementById('searchMessages').value);
+  const data=messageLog.filter(m=>!q || normalize(m.nome).includes(q)).slice().reverse();
+  if(!data.length){document.getElementById('messagesTable').innerHTML='<div class="card empty">Nenhuma mensagem registrada.</div>';return}
+  let html='<table><thead><tr><th>Cliente</th><th>Telefone</th><th>Data</th><th>Status</th></tr></thead><tbody>';
+  data.forEach(m=>html+=`<tr><td><b>${esc(m.nome)}</b></td><td>${esc(m.phone)}</td><td>${new Date(m.date).toLocaleString('pt-BR')}</td><td><span class="pill sent">WhatsApp aberto</span></td></tr>`);
+  html+='</tbody></table>';
+  document.getElementById('messagesTable').innerHTML=html;
+}
+
+window.openClient=function(key){
+  currentClient=clients.find(c=>c.key===key); if(!currentClient)return;
+  document.getElementById('modalName').textContent=currentClient.nome;
+  document.getElementById('modalPhone').value=currentClient.phone||'';
+  const tpl=localStorage.getItem('assinatura_template')||DEFAULT_TEMPLATE;
+  const first=currentClient.nome.split(' ')[0];
+  document.getElementById('modalMessage').value=tpl.replaceAll('{nome}',first);
+  document.getElementById('clientModal').classList.add('show');
+}
+window.closeModal=function(){document.getElementById('clientModal').classList.remove('show');currentClient=null}
+window.openWhatsApp=function(){
+  if(!currentClient)return;
+  const phone=document.getElementById('modalPhone').value.replace(/\D/g,'');
+  const msg=document.getElementById('modalMessage').value.trim();
+  if(phone.length<10){alert('Digite um telefone válido com DDD.');return}
+  currentClient.phone=phone;
+  messageLog.push({nome:currentClient.nome,phone,date:new Date().toISOString(),message:msg});
+  save(); renderAll(); closeModal();
+  window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(msg)}`,'_blank');
+}
+window.saveTemplate=function(){
+  localStorage.setItem('assinatura_template',document.getElementById('messageTemplate').value);
+  alert('Mensagem padrão salva.');
+}
+window.copyPending=async function(){
+  const p=clients.filter(c=>!c.signed);
+  const txt=p.map((c,i)=>`${i+1}. ${c.nome}`).join('\n')+`\n\nTotal: ${p.length}`;
+  await navigator.clipboard.writeText(txt); alert('Lista copiada.');
+}
+window.clearData=function(){
+  if(!confirm('Apagar os dados importados e o histórico de mensagens deste navegador?'))return;
+  clients=[];messageLog=[];save();renderAll();setStatus('Dados apagados.');
+}
+window.loadDemo=function(){
+  const records=[
+    {cliente:'Carlos Silva',descricao:'Proposta da seguradora',cotacao:'100001'},
+    {cliente:'Carlos Silva',descricao:'Proposta da seguradora_Assinado_14/09/2026',cotacao:'100001'},
+    {cliente:'Maria Souza',descricao:'Proposta da seguradora',cotacao:'100002'},
+    {cliente:'Maria Souza',descricao:'APOLICE',cotacao:'100003'},
+    {cliente:'João Lima',descricao:'ENDOSSO_Assinado_14/09/2026',cotacao:'100004'}
+  ];
+  clients=groupByClient(records);save();renderAll();setStatus('Exemplo carregado.');
+}
+function setStatus(t){document.getElementById('importStatus').textContent=t}
+renderAll();
+</script>
+</body>
+</html>
